@@ -21,4 +21,4 @@ for filename in ["echonet.cfg",
 
 CONFIG = types.SimpleNamespace(
     FILENAME=_FILENAME,
-    DATA_DIR=_PARAM.get("data_dir", "/media/qiyuan/My_Passport/EchoNet-Dynamic/"))
+    DATA_DIR=_PARAM.get("data_dir", "/content/drive/My Drive/EchoNet-Dynamic/"))
