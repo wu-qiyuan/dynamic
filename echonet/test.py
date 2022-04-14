@@ -17,4 +17,4 @@ import echonet.utils as utils
 # import echonet.utils.segmentation as utils
 
 if __name__ == '__main__':
-    utils.segmentation.run(output="/media/qiyuan/My_Passport/EchoNet-output/", save_video=True)
+    utils.segmentation.run(output="/media/qiyuan/My_Passport/EchoNet-output/", save_video=True, batch_size=8)
