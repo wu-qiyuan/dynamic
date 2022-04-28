@@ -281,7 +281,7 @@ def run(
 
                         if save_mask:
                             video[:, 0, :, w:] = 255. * (logit > 0)
-                        else
+                        else:
                             # Put two copies of the video side by side
                             video = np.concatenate((video, video), 3)
 
