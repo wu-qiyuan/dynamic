@@ -239,10 +239,11 @@ def run(
                 f.flush()
 
     # Saving videos with segmentations
-    dataset = echonet.datasets.Echo(root=data_dir, split="test",
+    dataset = echonet.datasets.Echo(root=data_dir, split="external_test",
                                     target_type=["Filename", "LargeIndex", "SmallIndex"],  # Need filename for saving, and human-selected frames to annotate
                                     mean=mean, std=std,  # Normalization
-                                    length=None, max_length=None, period=1  # Take all frames
+                                    length=None, max_length=None, period=1,  # Take all frames
+                                    external_test_location = '/content/drive/My Drive/EchoNet-Dynamic/testdir'
                                     )
     dataloader = torch.utils.data.DataLoader(dataset, batch_size=10, num_workers=num_workers, shuffle=False, pin_memory=False, collate_fn=_video_collate_fn)
 
