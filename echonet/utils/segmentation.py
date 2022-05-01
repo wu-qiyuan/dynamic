@@ -245,7 +245,7 @@ def run(
                                     length=None, max_length=None, period=1,  # Take all frames
                                     external_test_location = '/content/drive/My Drive/EchoNet-Dynamic/testdir'
                                     )
-    dataloader = torch.utils.data.DataLoader(dataset, batch_size=10, num_workers=num_workers, shuffle=False, pin_memory=False, collate_fn=_video_collate_fn)
+    dataloader = torch.utils.data.DataLoader(dataset, batch_size=1, num_workers=num_workers, shuffle=False, pin_memory=False, collate_fn=_video_collate_fn)
 
     # Save videos with segmentation
     if save_video and not all(os.path.isfile(os.path.join(output, "videos", f)) for f in dataloader.dataset.fnames):
