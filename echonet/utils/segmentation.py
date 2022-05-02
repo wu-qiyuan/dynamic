@@ -246,6 +246,7 @@ def run(
                                     )
     dataloader = torch.utils.data.DataLoader(dataset, batch_size=1, num_workers=num_workers, shuffle=False, pin_memory=False, collate_fn=_video_collate_fn)
 
+    
     # Save videos with segmentation
     if save_video and not all(os.path.isfile(os.path.join(output, "videos", f)) for f in dataloader.dataset.fnames):
         # Only run if missing videos
@@ -254,6 +255,9 @@ def run(
 
         os.makedirs(os.path.join(output, "videos"), exist_ok=True)
         os.makedirs(os.path.join(output, "size"), exist_ok=True)
+        if save_mask:
+            os.makedirs(os.path.join(output, "masks"), exist_ok=True)
+        
         echonet.utils.latexify()
 
         with torch.no_grad():
@@ -279,18 +283,14 @@ def run(
                         f, c, h, w = video.shape  # pylint: disable=W0612
                         assert c == 3
 
-                        if save_mask:
-                            video[:, 0, :, w:] = 255. * (logit > 0)
-                        else:
-                            # Put two copies of the video side by side
-                            video = np.concatenate((video, video), 3)
+                        # Put two copies of the video side by side
+                        video = np.concatenate((video, video), 3)
+                        # If a pixel is in the segmentation, saturate blue channel
+                        # Leave alone otherwise
+                        video[:, 0, :, w:] = np.maximum(255. * (logit > 0), video[:, 0, :, w:])  # pylint: disable=E1111
 
-                            # If a pixel is in the segmentation, saturate blue channel
-                            # Leave alone otherwise
-                            video[:, 0, :, w:] = np.maximum(255. * (logit > 0), video[:, 0, :, w:])  # pylint: disable=E1111
-
-                            # Add blank canvas under pair of videos
-                            video = np.concatenate((video, np.zeros_like(video)), 2)
+                        # Add blank canvas under pair of videos
+                        video = np.concatenate((video, np.zeros_like(video)), 2)
 
                         # Compute size of segmentation per frame
                         size = (logit > 0).sum((1, 2))
@@ -324,47 +324,49 @@ def run(
                         size = size / size.max()
                         size = 1 - size
 
-                        if not save_mask:
-                            # Iterate the frames in this video
-                            for (f, s) in enumerate(size):
+                        # Iterate the frames in this video
+                        for (f, s) in enumerate(size):
 
-                                # On all frames, mark a pixel for the size of the frame
-                                video[:, :, int(round(115 + 100 * s)), int(round(f / len(size) * 200 + 10))] = 255.
+                            # On all frames, mark a pixel for the size of the frame
+                            video[:, :, int(round(115 + 100 * s)), int(round(f / len(size) * 200 + 10))] = 255.
 
-                                if f in systole:
-                                    # If frame is computer-selected systole, mark with a line
-                                    video[:, :, 115:224, int(round(f / len(size) * 200 + 10))] = 255.
+                            if f in systole:
+                                # If frame is computer-selected systole, mark with a line
+                                video[:, :, 115:224, int(round(f / len(size) * 200 + 10))] = 255.
 
-                                def dash(start, stop, on=10, off=10):
-                                    buf = []
-                                    x = start
-                                    while x < stop:
-                                        buf.extend(range(x, x + on))
-                                        x += on
-                                        x += off
-                                    buf = np.array(buf)
-                                    buf = buf[buf < stop]
-                                    return buf
-                                d = dash(115, 224)
+                            def dash(start, stop, on=10, off=10):
+                                buf = []
+                                x = start
+                                while x < stop:
+                                    buf.extend(range(x, x + on))
+                                    x += on
+                                    x += off
+                                buf = np.array(buf)
+                                buf = buf[buf < stop]
+                                return buf
+                            d = dash(115, 224)
 
-                                if f == large_index[i]:
-                                    # If frame is human-selected diastole, mark with green dashed line on all frames
-                                    video[:, :, d, int(round(f / len(size) * 200 + 10))] = np.array([0, 225, 0]).reshape((1, 3, 1))
-                                if f == small_index[i]:
-                                    # If frame is human-selected systole, mark with red dashed line on all frames
-                                    video[:, :, d, int(round(f / len(size) * 200 + 10))] = np.array([0, 0, 225]).reshape((1, 3, 1))
+                            if f == large_index[i]:
+                                # If frame is human-selected diastole, mark with green dashed line on all frames
+                                video[:, :, d, int(round(f / len(size) * 200 + 10))] = np.array([0, 225, 0]).reshape((1, 3, 1))
+                            if f == small_index[i]:
+                                # If frame is human-selected systole, mark with red dashed line on all frames
+                                video[:, :, d, int(round(f / len(size) * 200 + 10))] = np.array([0, 0, 225]).reshape((1, 3, 1))
 
-                                # Get pixels for a circle centered on the pixel
-                                r, c = skimage.draw.disk((int(round(115 + 100 * s)), int(round(f / len(size) * 200 + 10))), 4.1)
+                            # Get pixels for a circle centered on the pixel
+                            r, c = skimage.draw.disk((int(round(115 + 100 * s)), int(round(f / len(size) * 200 + 10))), 4.1)
 
-                                # On the frame that's being shown, put a circle over the pixel
-                                video[f, :, r, c] = 255.
+                            # On the frame that's being shown, put a circle over the pixel
+                            video[f, :, r, c] = 255.
 
                         # Rearrange dimensions and save
                         video = video.transpose(1, 0, 2, 3)
                         video = video.astype(np.uint8)
                         echonet.utils.savevideo(os.path.join(output, "videos", filename), video, 50)
 
+                        if save_mask:
+                            np.savez(os.path.join(output, "masks", os.path.splitext(filename)[0] + ".npz"), logit)
+                            
                         # Move to next video
                         start += offset
 
