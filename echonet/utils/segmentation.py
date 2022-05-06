@@ -242,7 +242,6 @@ def run(
     else:
         checkpoint = torch.load(os.path.join(output, "best.pt"))
         model.load_state_dict(checkpoint['state_dict'])
-        f.write("Best validation loss {} from epoch {}\n".format(checkpoint["loss"], checkpoint["epoch"]))
     
     # Saving videos with segmentations
     dataset = echonet.datasets.Echo(root=data_dir, split="test",
