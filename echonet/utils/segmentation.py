@@ -44,6 +44,7 @@ def run(
     pretrained=False,
     weights=None,
 
+    run_train=False,
     save_mask=True,
     run_test=False,
     save_video=False,
@@ -135,109 +136,114 @@ def run(
         lr_step_period = math.inf
     scheduler = torch.optim.lr_scheduler.StepLR(optim, lr_step_period)
 
-    # Compute mean and std
-    mean, std = echonet.utils.get_mean_and_std(echonet.datasets.Echo(root=data_dir, split="train"))
-    tasks = ["LargeFrame", "SmallFrame", "LargeTrace", "SmallTrace"]
-    kwargs = {"target_type": tasks,
-              "mean": mean,
-              "std": std
-              }
+    if run_train:
+        # Compute mean and std
+        mean, std = echonet.utils.get_mean_and_std(echonet.datasets.Echo(root=data_dir, split="train"))
+        tasks = ["LargeFrame", "SmallFrame", "LargeTrace", "SmallTrace"]
+        kwargs = {"target_type": tasks,
+                  "mean": mean,
+                  "std": std
+                  }
 
-    # Set up datasets and dataloaders
-    dataset = {}
-    dataset["train"] = echonet.datasets.Echo(root=data_dir, split="train", **kwargs)
-    if num_train_patients is not None and len(dataset["train"]) > num_train_patients:
-        # Subsample patients (used for ablation experiment)
-        indices = np.random.choice(len(dataset["train"]), num_train_patients, replace=False)
-        dataset["train"] = torch.utils.data.Subset(dataset["train"], indices)
-    dataset["val"] = echonet.datasets.Echo(root=data_dir, split="val", **kwargs)
+        # Set up datasets and dataloaders
+        dataset = {}
+        dataset["train"] = echonet.datasets.Echo(root=data_dir, split="train", **kwargs)
+        if num_train_patients is not None and len(dataset["train"]) > num_train_patients:
+            # Subsample patients (used for ablation experiment)
+            indices = np.random.choice(len(dataset["train"]), num_train_patients, replace=False)
+            dataset["train"] = torch.utils.data.Subset(dataset["train"], indices)
+        dataset["val"] = echonet.datasets.Echo(root=data_dir, split="val", **kwargs)
 
-    # Run training and testing loops
-    with open(os.path.join(output, "log.csv"), "a") as f:
-        epoch_resume = 0
-        bestLoss = float("inf")
-        try:
-            # Attempt to load checkpoint
-            checkpoint = torch.load(os.path.join(output, "checkpoint.pt"))
-            model.load_state_dict(checkpoint['state_dict'])
-            optim.load_state_dict(checkpoint['opt_dict'])
-            scheduler.load_state_dict(checkpoint['scheduler_dict'])
-            epoch_resume = checkpoint["epoch"] + 1
-            bestLoss = checkpoint["best_loss"]
-            f.write("Resuming from epoch {}\n".format(epoch_resume))
-        except FileNotFoundError:
-            f.write("Starting run from scratch\n")
+        # Run training and testing loops
+        with open(os.path.join(output, "log.csv"), "a") as f:
+            epoch_resume = 0
+            bestLoss = float("inf")
+            try:
+                # Attempt to load checkpoint
+                checkpoint = torch.load(os.path.join(output, "checkpoint.pt"))
+                model.load_state_dict(checkpoint['state_dict'])
+                optim.load_state_dict(checkpoint['opt_dict'])
+                scheduler.load_state_dict(checkpoint['scheduler_dict'])
+                epoch_resume = checkpoint["epoch"] + 1
+                bestLoss = checkpoint["best_loss"]
+                f.write("Resuming from epoch {}\n".format(epoch_resume))
+            except FileNotFoundError:
+                f.write("Starting run from scratch\n")
 
-        for epoch in range(epoch_resume, num_epochs):
-            print("Epoch #{}".format(epoch), flush=True)
-            for phase in ['train', 'val']:
-                start_time = time.time()
-                for i in range(torch.cuda.device_count()):
-                    torch.cuda.reset_peak_memory_stats(i)
+            for epoch in range(epoch_resume, num_epochs):
+                print("Epoch #{}".format(epoch), flush=True)
+                for phase in ['train', 'val']:
+                    start_time = time.time()
+                    for i in range(torch.cuda.device_count()):
+                        torch.cuda.reset_peak_memory_stats(i)
 
-                ds = dataset[phase]
-                dataloader = torch.utils.data.DataLoader(
-                    ds, batch_size=batch_size, num_workers=num_workers, shuffle=True, pin_memory=(device.type == "cuda"), drop_last=(phase == "train"))
+                    ds = dataset[phase]
+                    dataloader = torch.utils.data.DataLoader(
+                        ds, batch_size=batch_size, num_workers=num_workers, shuffle=True, pin_memory=(device.type == "cuda"), drop_last=(phase == "train"))
 
-                loss, large_inter, large_union, small_inter, small_union = echonet.utils.segmentation.run_epoch(model, dataloader, phase == "train", optim, device)
-                overall_dice = 2 * (large_inter.sum() + small_inter.sum()) / (large_union.sum() + large_inter.sum() + small_union.sum() + small_inter.sum())
-                large_dice = 2 * large_inter.sum() / (large_union.sum() + large_inter.sum())
-                small_dice = 2 * small_inter.sum() / (small_union.sum() + small_inter.sum())
-                f.write("{},{},{},{},{},{},{},{},{},{},{}\n".format(epoch,
-                                                                    phase,
-                                                                    loss,
-                                                                    overall_dice,
-                                                                    large_dice,
-                                                                    small_dice,
-                                                                    time.time() - start_time,
-                                                                    large_inter.size,
-                                                                    sum(torch.cuda.max_memory_allocated() for i in range(torch.cuda.device_count())),
-                                                                    sum(torch.cuda.max_memory_reserved() for i in range(torch.cuda.device_count())),
-                                                                    batch_size))
-                f.flush()
-            scheduler.step()
+                    loss, large_inter, large_union, small_inter, small_union = echonet.utils.segmentation.run_epoch(model, dataloader, phase == "train", optim, device)
+                    overall_dice = 2 * (large_inter.sum() + small_inter.sum()) / (large_union.sum() + large_inter.sum() + small_union.sum() + small_inter.sum())
+                    large_dice = 2 * large_inter.sum() / (large_union.sum() + large_inter.sum())
+                    small_dice = 2 * small_inter.sum() / (small_union.sum() + small_inter.sum())
+                    f.write("{},{},{},{},{},{},{},{},{},{},{}\n".format(epoch,
+                                                                        phase,
+                                                                        loss,
+                                                                        overall_dice,
+                                                                        large_dice,
+                                                                        small_dice,
+                                                                        time.time() - start_time,
+                                                                        large_inter.size,
+                                                                        sum(torch.cuda.max_memory_allocated() for i in range(torch.cuda.device_count())),
+                                                                        sum(torch.cuda.max_memory_reserved() for i in range(torch.cuda.device_count())),
+                                                                        batch_size))
+                    f.flush()
+                scheduler.step()
 
-            # Save checkpoint
-            save = {
-                'epoch': epoch,
-                'state_dict': model.state_dict(),
-                'best_loss': bestLoss,
-                'loss': loss,
-                'opt_dict': optim.state_dict(),
-                'scheduler_dict': scheduler.state_dict(),
-            }
-            torch.save(save, os.path.join(output, "checkpoint.pt"))
-            if loss < bestLoss:
-                torch.save(save, os.path.join(output, "best.pt"))
-                bestLoss = loss
+                # Save checkpoint
+                save = {
+                    'epoch': epoch,
+                    'state_dict': model.state_dict(),
+                    'best_loss': bestLoss,
+                    'loss': loss,
+                    'opt_dict': optim.state_dict(),
+                    'scheduler_dict': scheduler.state_dict(),
+                }
+                torch.save(save, os.path.join(output, "checkpoint.pt"))
+                if loss < bestLoss:
+                    torch.save(save, os.path.join(output, "best.pt"))
+                    bestLoss = loss
 
-        # Load best weights
-        if num_epochs != 0:
-            checkpoint = torch.load(os.path.join(output, "best.pt"))
-            model.load_state_dict(checkpoint['state_dict'])
-            f.write("Best validation loss {} from epoch {}\n".format(checkpoint["loss"], checkpoint["epoch"]))
+            # Load best weights
+            if num_epochs != 0:
+                checkpoint = torch.load(os.path.join(output, "best.pt"))
+                model.load_state_dict(checkpoint['state_dict'])
+                f.write("Best validation loss {} from epoch {}\n".format(checkpoint["loss"], checkpoint["epoch"]))
 
-        if run_test:
-            # Run on validation and test
-            for split in ["val", "test"]:
-                dataset = echonet.datasets.Echo(root=data_dir, split=split, **kwargs)
-                dataloader = torch.utils.data.DataLoader(dataset,
-                                                         batch_size=batch_size, num_workers=num_workers, shuffle=False, pin_memory=(device.type == "cuda"))
-                loss, large_inter, large_union, small_inter, small_union = echonet.utils.segmentation.run_epoch(model, dataloader, False, None, device)
+            if run_test:
+                # Run on validation and test
+                for split in ["val", "test"]:
+                    dataset = echonet.datasets.Echo(root=data_dir, split=split, **kwargs)
+                    dataloader = torch.utils.data.DataLoader(dataset,
+                                                             batch_size=batch_size, num_workers=num_workers, shuffle=False, pin_memory=(device.type == "cuda"))
+                    loss, large_inter, large_union, small_inter, small_union = echonet.utils.segmentation.run_epoch(model, dataloader, False, None, device)
 
-                overall_dice = 2 * (large_inter + small_inter) / (large_union + large_inter + small_union + small_inter)
-                large_dice = 2 * large_inter / (large_union + large_inter)
-                small_dice = 2 * small_inter / (small_union + small_inter)
-                with open(os.path.join(output, "{}_dice.csv".format(split)), "w") as g:
-                    g.write("Filename, Overall, Large, Small\n")
-                    for (filename, overall, large, small) in zip(dataset.fnames, overall_dice, large_dice, small_dice):
-                        g.write("{},{},{},{}\n".format(filename, overall, large, small))
+                    overall_dice = 2 * (large_inter + small_inter) / (large_union + large_inter + small_union + small_inter)
+                    large_dice = 2 * large_inter / (large_union + large_inter)
+                    small_dice = 2 * small_inter / (small_union + small_inter)
+                    with open(os.path.join(output, "{}_dice.csv".format(split)), "w") as g:
+                        g.write("Filename, Overall, Large, Small\n")
+                        for (filename, overall, large, small) in zip(dataset.fnames, overall_dice, large_dice, small_dice):
+                            g.write("{},{},{},{}\n".format(filename, overall, large, small))
 
-                f.write("{} dice (overall): {:.4f} ({:.4f} - {:.4f})\n".format(split, *echonet.utils.bootstrap(np.concatenate((large_inter, small_inter)), np.concatenate((large_union, small_union)), echonet.utils.dice_similarity_coefficient)))
-                f.write("{} dice (large):   {:.4f} ({:.4f} - {:.4f})\n".format(split, *echonet.utils.bootstrap(large_inter, large_union, echonet.utils.dice_similarity_coefficient)))
-                f.write("{} dice (small):   {:.4f} ({:.4f} - {:.4f})\n".format(split, *echonet.utils.bootstrap(small_inter, small_union, echonet.utils.dice_similarity_coefficient)))
-                f.flush()
-
+                    f.write("{} dice (overall): {:.4f} ({:.4f} - {:.4f})\n".format(split, *echonet.utils.bootstrap(np.concatenate((large_inter, small_inter)), np.concatenate((large_union, small_union)), echonet.utils.dice_similarity_coefficient)))
+                    f.write("{} dice (large):   {:.4f} ({:.4f} - {:.4f})\n".format(split, *echonet.utils.bootstrap(large_inter, large_union, echonet.utils.dice_similarity_coefficient)))
+                    f.write("{} dice (small):   {:.4f} ({:.4f} - {:.4f})\n".format(split, *echonet.utils.bootstrap(small_inter, small_union, echonet.utils.dice_similarity_coefficient)))
+                    f.flush()
+    else:
+        checkpoint = torch.load(os.path.join(output, "best.pt"))
+        model.load_state_dict(checkpoint['state_dict'])
+        f.write("Best validation loss {} from epoch {}\n".format(checkpoint["loss"], checkpoint["epoch"]))
+    
     # Saving videos with segmentations
     dataset = echonet.datasets.Echo(root=data_dir, split="test",
                                     target_type=["Filename", "LargeIndex", "SmallIndex"],  # Need filename for saving, and human-selected frames to annotate
