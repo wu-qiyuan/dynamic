@@ -44,7 +44,7 @@ def run(
     pretrained=False,
     weights=None,
 
-    run_train=False,
+    run_train=True,
     save_mask=True,
     run_test=False,
     save_video=False,
