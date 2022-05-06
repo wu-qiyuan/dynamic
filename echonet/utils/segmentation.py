@@ -249,7 +249,7 @@ def run(
                                     mean=mean, std=std,  # Normalization
                                     length=None, max_length=None, period=1,  # Take all frames
                                     )
-    dataloader = torch.utils.data.DataLoader(dataset, batch_size=1, num_workers=num_workers, shuffle=False, pin_memory=False, collate_fn=_video_collate_fn)
+    dataloader = torch.utils.data.DataLoader(dataset, batch_size=10, num_workers=num_workers, shuffle=False, pin_memory=False, collate_fn=_video_collate_fn)
 
     
     # Save videos with segmentation
