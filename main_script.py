@@ -29,7 +29,7 @@ def main(data_dir,result_dir,mask_model_training=False,mask_generation = False):
         assert os.path.isdir(mask_dir), 'mask folder does not exist, need mask generation'
     else:
         echonet.utils.segmentation.run(output="segmentation/", save_mask=True, num_workers=2)
-        print(1)
+        mask_dir = 'segmentation/segmentation/deeplabv3_resnet50_random/masks'
     
     '''step 2 point set tracking'''
     VolumeTracing_dir = os.path.join(data_dir,'VolumeTracking.csv')
